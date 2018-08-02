@@ -7,7 +7,31 @@ import (
 	"net"
 	"bytes"
 	"fmt"
+	"sort"
+	"GoPay/wxpay/config"
+	"crypto/md5"
+	"errors"
 )
+
+//生成签名
+func GenerateSign(params map[string]string) (string,error) {
+	var data []string
+	for k, v := range params {
+		if v != "" && k != "sign" {
+			data = append(data, fmt.Sprintf(`%s=%s`, k, v))
+		}
+	}
+	sort.Strings(data)
+	data = append(data, fmt.Sprintf("key=%s", config.MCH_KEY))
+	signData := strings.Join(data, "&")
+	h := md5.New()
+	_,err := h.Write([]byte(signData))
+	if err != nil {
+		return "",errors.New("[gopay->wxpay] hash write error, "+err.Error())
+	}
+	result := fmt.Sprintf("%X",h.Sum(nil))
+	return result,nil
+}
 
 //生成随机字符串
 func CreateNonceStr() string {

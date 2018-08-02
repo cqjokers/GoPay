@@ -5,4 +5,5 @@ const(
 	MCH_KEY = "sdfsdfsdfsdf"
 	NOTIFY_URL = "sdfsdfsdfsdf"
 	UNIFIEDORDER_URL = "https://api.mch.weixin.qq.com/pay/unifiedorder"
+	ORDERQUERY_URL = "https://api.mch.weixin.qq.com/pay/orderquery"
 )

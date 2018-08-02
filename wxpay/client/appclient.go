@@ -6,9 +6,7 @@ import (
 	"strings"
 	"encoding/json"
 	"errors"
-	"sort"
 	"GoPay/wxpay/config"
-	"crypto/md5"
 	"encoding/xml"
 	"GoPay/wxpay/utils"
 	"net/http"
@@ -47,7 +45,7 @@ func (this AppClient) Pay(request common.WxPayAppRequest) (map[string]string, er
 	if err != nil {
 		return nil, errors.New("[gopay->wxpay] json Unmarshal error, " + err.Error())
 	}
-	m["sign"],err = this.GenerateSign(m)
+	m["sign"],err = utils.GenerateSign(m)
 	if err != nil {
 		return nil,err
 	}
@@ -67,17 +65,23 @@ func (this AppClient) Pay(request common.WxPayAppRequest) (map[string]string, er
 	if err != nil {
 		return nil,errors.New("[gopay->wxpay] xml.Unmarshal error, "+err.Error())
 	}
-	//组装APP端需要的数据
-	var data = make(map[string]string)
-	data["appid"] = this.AppId
-	data["partnerid"] = this.MchId
-	data["prepayid"] = response.PrepayId
-	data["package"] = "Sign=WXPay"
-	data["noncestr"] = utils.CreateNonceStr()
-	data["timestamp"] = fmt.Sprintf("%d",time.Now().Unix())
-	data["sign"],err = this.GenerateSign(data)
-	return data,nil
+	if response.ReturnCode == "SUCCESS" && response.ResultCode == "SUCCESS" {
+
+		//组装APP端需要的数据
+		var data = make(map[string]string)
+		data["appid"] = this.AppId
+		data["partnerid"] = this.MchId
+		data["prepayid"] = response.PrepayId
+		data["package"] = "Sign=WXPay"
+		data["noncestr"] = utils.CreateNonceStr()
+		data["timestamp"] = fmt.Sprintf("%d",time.Now().Unix())
+		data["sign"],err = utils.GenerateSign(data)
+		return data,nil
+	}
+	return nil,errors.New("[gopay->wxpay] pay faild:"+response.ReturnMsg+","+response.ErrCode+"->"+response.ErrCodeDes)
 }
+
+
 
 //支付回调方法
 func (this *AppClient) CallBack(w http.ResponseWriter,r http.Request) (common.WxPayNotifyResponse,error)  {
@@ -117,7 +121,7 @@ func (this *AppClient) CallBack(w http.ResponseWriter,r http.Request) (common.Wx
 		return response,errors.New("[gopay->wxpay] callback json.Unmarshal error: "+err.Error())
 	}
 	//验签
-	signData,err := this.GenerateSign(m)
+	signData,err := utils.GenerateSign(m)
 	if err != nil {
 		return response,err
 	}
@@ -128,24 +132,36 @@ func (this *AppClient) CallBack(w http.ResponseWriter,r http.Request) (common.Wx
 	return response,nil
 }
 
-//生成签名
-func (this *AppClient) GenerateSign(params map[string]string) (string,error) {
-	var data []string
-	for k, v := range params {
-		if v != "" && k != "sign" {
-			data = append(data, fmt.Sprintf(`%s=%s`, k, v))
-		}
-	}
-	sort.Strings(data)
-	data = append(data, fmt.Sprintf("key=%s", config.MCH_KEY))
-	signData := strings.Join(data, "&")
-	h := md5.New()
-	_,err := h.Write([]byte(signData))
+//订单查询
+func (this *AppClient) OrderQuery(outTradeNo string) (common.WxPayQueryResponse,error)  {
+	var m = make(map[string]string)
+	m["nonce_str"] = utils.CreateNonceStr()
+	m["appid"] = this.AppId
+	m["mch_id"] = this.MchId
+	m["out_trade_no"] = outTradeNo
+	sign,err := utils.GenerateSign(m)
+	var resp common.WxPayQueryResponse
 	if err != nil {
-		return "",errors.New("[gopay->wxpay] hash write error, "+err.Error())
+		return resp,err
 	}
-	result := fmt.Sprintf("%X",h.Sum(nil))
-	return result,nil
+	m["sign"] = sign
+	xmlStr := utils.MapToXml(m)
+	response,err := http.Post(config.ORDERQUERY_URL,"text/xml:charset=UTF-8",strings.NewReader(xmlStr))
+	if err != nil {
+		return resp,err
+	}
+	defer response.Body.Close()
+	body,err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return resp,err
+	}
+	err = xml.Unmarshal(body,&resp)
+	if err != nil {
+		return resp,errors.New("[gopay->wxpay] xml.Unmarshal error, "+err.Error())
+	}
+	if resp.ReturnCode == "SUCCESS" && resp.ResultCode == "SUCCESS" {
+		return resp,nil
+	}
+	return resp,errors.New("[gopay->wxpay] orderQuery faild:"+resp.ReturnMsg+","+resp.ErrCode+"->"+resp.ErrCodeDes)
 }
-
 
